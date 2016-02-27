@@ -74,6 +74,8 @@
                   (get-genres-set movie))) #{} archive))
 
 
+
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Max Genre :   (max-genre (card-genres movies))    ["Drama" 4310]
@@ -127,3 +129,99 @@
 
 (def rating-filename "resources/ml-latest-small/ratings.csv")
 (def ratings (rating-map (rest (csv-seq rating-filename))))
+
+
+(defn update-movie-average
+  "Updates the entries in the movies-avg-map based on the user-ratings.
+  The movies-avg map has this form {movie-id [sum-of-ratings, nb-of-ratings]}.
+  For each rating this user has given, the map is updated."
+
+  [movies-avg-map user-ratings]
+  (reduce
+   (fn [movies-avg, [movie-id, movie-rating]]
+     (let [movie-entry (get movies-avg movie-id)]
+       (if movie-entry
+         (assoc movies-avg movie-id [(+ (first movie-entry) movie-rating) (inc (second movie-entry))])
+         (assoc movies-avg movie-id [movie-rating, 1]))))
+   movies-avg-map user-ratings))
+
+(defn movies-ratings-count
+  "Returns the rating count of all the movies,
+  in one single sweep of the ratings map."
+  [ratings]
+  (reduce
+   (fn [movies-avg-map [_ user-ratings-map]] (update-movie-average movies-avg-map user-ratings-map))
+   {} ratings))
+
+(defn movie-avg-rating
+  "Sweep the movies-ratings-count and compute the average for all the movies."
+  [ratings]
+  (reduce (fn [movie-average, [movie-id [rating nb-votes]]]
+            (assoc movie-average movie-id (/ rating nb-votes))) {} (movies-ratings-count ratings)))
+
+
+(def movie-avg-ratings (movie-avg-rating ratings))
+(def movie-count (count movie-avg-ratings))
+
+(def sorted-movie-avg-rating (sort-by last (movie-avg-rating ratings)))
+
+(defn movie-names-from-ratings
+  "Returns a string containing the movie titles from movies-ratings."
+  [movies-ratings]
+  (reduce
+   (fn [movie-print [movie-id, rating]]
+     (str movie-print "Title : " (:title (get movies movie-id)) ". Rating : " rating "\n"))
+   "" movies-ratings))
+
+(defn best-rated-movies
+  "Returns a string containing the n best rated movies"
+  [n]
+  (movie-names-from-ratings (take-last n sorted-movie-avg-rating)))
+
+(defn worst-rated-movies
+  "Returns a string containing the n best rated movies"
+  [n]
+  (movie-names-from-ratings (take n sorted-movie-avg-rating)))
+
+(def average-rating
+  (/ (reduce
+      (fn [sum, [_ rating]] (+ sum rating)) 0 movie-avg-ratings) movie-count))
+
+(defn user-avg-rating
+  "Returns a map containing the user id and his average rating."  
+  [id ratings]
+  {id (/ (reduce (fn [sum [_, rating]] (+ sum rating)) 0 ratings) (count ratings))})
+
+(defn users-avg-rating
+  "Computes the avgerage rating offered by each user."
+  [ratings]
+  (reduce (fn [rez [id ratings]] (into rez (user-avg-rating id ratings))) {} ratings))
+
+(def sorted-users-avg-rating (sort-by last (users-avg-rating ratings)))
+
+(defn users-id-from-ratings
+  "Returns a string containing the user id from user-map."
+  [user-map]
+  (reduce
+   (fn [user-list [user-id avg-rating]]
+     (str user-list "User-id : " user-id " Average rating : " (format "%.2f" avg-rating) "\n")) "" user-map))
+
+(defn kindest-users
+  "Returns a string containing the users with the highest avg rating in ascending order."
+  [n]
+  (users-id-from-ratings (take-last 10 sorted-users-avg-rating)))
+
+(defn meanest-users
+  "Returns a string containing the users with the lowest avg rating in ascending order."
+  [n]
+  (users-id-from-ratings (take 10 sorted-users-avg-rating)))
+
+(defn rate-all-movies-from-category
+  "Returns a vector of movie titles and their rating, for a specific category."
+  [category movies ratings]
+  (let [sorted-movies (films-by-genre category movies)]
+    (sort-by
+     last
+     (reduce
+      (fn [rezult movie]
+        (conj rezult [(:title (second movie)) (get ratings (first movie))])) [] sorted-movies))))
