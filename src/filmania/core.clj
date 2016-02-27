@@ -1,6 +1,7 @@
 (ns filmania.core
   (require [clojure.data.csv :as csv]
-           [clojure.java.io :as io]))
+           [clojure.java.io :as io]
+           [clojure.pprint :as print]))
 
 
 (defn csv-seq
@@ -9,8 +10,6 @@
   (with-open [in-file (io/reader filename)]
     (doall
      (csv/read-csv in-file))))
-
-
 
 (defn parse-movie
   "Construit un enregistrement de film depuis un entrée lue depuis CSV."
@@ -33,7 +32,7 @@
               m))
           {} csv))
 
-;; Attention: gros fichier
+
 (def movie-filename "resources/ml-latest-small/movies.csv")
 
 (def movies (movie-map (rest (csv-seq movie-filename))))
@@ -44,7 +43,7 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;             FIST PART
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Archive size :    (archive-size movies)                     => 8918
 ;; Science-fiction : (count (films-by-genre "Sci-Fi" movies))  => 743
@@ -74,8 +73,6 @@
                   (get-genres-set movie))) #{} archive))
 
 
-
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Max Genre :   (max-genre (card-genres movies))    ["Drama" 4310]
@@ -86,6 +83,8 @@
   [archive]
   (reduce (fn [result genre]
             (assoc result genre (count (films-by-genre genre archive)))) {} (all-genres archive)))
+
+(def card-genre (card-genres movies))
 
 (defn max-genre
   [movies-map]
@@ -128,7 +127,8 @@
 
 
 (def rating-filename "resources/ml-latest-small/ratings.csv")
-(def ratings (rating-map (rest (csv-seq rating-filename))))
+(def rating-csv (rest (csv-seq rating-filename)))
+(def ratings (rating-map rating-csv))
 
 
 (defn update-movie-average
@@ -170,18 +170,18 @@
   [movies-ratings]
   (reduce
    (fn [movie-print [movie-id, rating]]
-     (str movie-print "Title : " (:title (get movies movie-id)) ". Rating : " rating "\n"))
+     (str movie-print "[[\"title\" \"" (:title (get movies movie-id)) "\"" "] [\"rating\" " rating "]]\n"))
    "" movies-ratings))
 
 (defn best-rated-movies
   "Returns a string containing the n best rated movies"
   [n]
-  (movie-names-from-ratings (take-last n sorted-movie-avg-rating)))
+  (str "[\"category\" \"best rated movies \"]\n" (movie-names-from-ratings (take-last n sorted-movie-avg-rating))))
 
 (defn worst-rated-movies
   "Returns a string containing the n best rated movies"
   [n]
-  (movie-names-from-ratings (take n sorted-movie-avg-rating)))
+  (str "[\"category\" \"worst rated movies \"]\n" (movie-names-from-ratings (take n sorted-movie-avg-rating))))
 
 (def average-rating
   (/ (reduce
@@ -204,17 +204,17 @@
   [user-map]
   (reduce
    (fn [user-list [user-id avg-rating]]
-     (str user-list "User-id : " user-id " Average rating : " (format "%.2f" avg-rating) "\n")) "" user-map))
+     (str user-list "[[\"user-id\" " user-id "] [\"average rating\"" (format "%.2f" avg-rating) "]]\n")) "" user-map))
 
 (defn kindest-users
   "Returns a string containing the users with the highest avg rating in ascending order."
   [n]
-  (users-id-from-ratings (take-last 10 sorted-users-avg-rating)))
+  (str "[\"category\" \"highest rating users \"]\n"  (users-id-from-ratings (take-last n sorted-users-avg-rating))))
 
 (defn meanest-users
   "Returns a string containing the users with the lowest avg rating in ascending order."
   [n]
-  (users-id-from-ratings (take 10 sorted-users-avg-rating)))
+    (str "[\"category\" \"lowest rating users \"]\n"(users-id-from-ratings (take n sorted-users-avg-rating))))
 
 (defn rate-all-movies-from-category
   "Returns a vector of movie titles and their rating, for a specific category."
@@ -225,3 +225,83 @@
      (reduce
       (fn [rezult movie]
         (conj rezult [(:title (second movie)) (get ratings (first movie))])) [] sorted-movies))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;             STATS
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(def line "_______________________________________________")
+(def n "\n")
+(defn print-line [] (println (str line n)))
+
+(defn surround-text [txt]
+  (str line n n txt n line n))
+
+(defn print-hello-msg [] (println (surround-text "         Welcome ^_^")))
+(defn print-bbye-msg [] (println (surround-text "         Bye Bye ^_^")))
+
+(defn print-count-stats []
+  (print/pprint
+   [["movies" (count movies)]
+    ["ratings" (count rating-csv)]
+    ["users" (count ratings)]]))
+
+(defn print-genres-stats []
+  (print/pprint (sort card-genre )))
+
+(defn print-min-genre []
+  (print/pprint   
+   ["least films" (min-genre card-genre)]))
+
+(defn print-max-genre []
+  (print/pprint
+   ["most films" (max-genre card-genre)]))
+
+(defn print-average-rating []
+  (print/pprint ["average rating" (format "%.2f" average-rating)]))
+
+(defn top-movies-category [n]
+  (let [sorted-genres (sort (all-genres movies))]
+    (print/pprint
+     (reduce
+      (fn [rezult genre]
+        (assoc
+         rezult genre
+         (take-last
+          n (rate-all-movies-from-category
+             genre movies movie-avg-ratings)))) {} sorted-genres))))
+
+(defn print-top-movies-category [n]
+  (do (println "[highest rated filmes by category]")
+      (top-movies-category n)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;             MAIN
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn -main
+  "Main program"
+  [& args]
+  (do
+    (println)
+    (print-hello-msg)      
+    (print-count-stats)
+    (print-line)
+    (print-genres-stats)
+    (print-line)
+    (print-min-genre)
+    (print-max-genre)
+    (print-line)
+    (print-average-rating)
+    (print-line)
+    (println (best-rated-movies 20))
+    (print-line)
+    (println (worst-rated-movies 20))
+    (print-line)
+    (println (kindest-users 20))
+    (print-line)
+    (println (meanest-users 20))
+    (print-line)
+    (print-top-movies-category 10)
+    (print-bbye-msg)))
